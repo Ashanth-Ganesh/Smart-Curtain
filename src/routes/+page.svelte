@@ -754,6 +754,7 @@
                     class:active={room.color === color.value}
                     style:--swatch={color.value}
                     aria-label={color.name}
+                    title={color.name}
                     aria-pressed={room.color === color.value}
                     onclick={() => (room.color = color.value)}
                     >{#if room.color === color.value}<Icon

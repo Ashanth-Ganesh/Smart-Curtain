@@ -56,6 +56,67 @@ test("controls move the curtain, reach opaque/clear, and save independent rooms"
   expect(errors).toEqual([]);
 });
 
+test("fabric sways visibly after real slider drags and small keyboard changes, then respects reduced motion and smooth mode", async ({
+  page,
+}, testInfo) => {
+  const opening = page.locator("#opening");
+  const panel = page.locator("#curtain-coverage rect").first();
+  const lean = () =>
+    panel.evaluate(
+      (el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).c * 700,
+    );
+  const settle = () =>
+    expect
+      .poll(() =>
+        panel.evaluate(
+          (el) =>
+            el
+              .getAnimations()
+              .filter(
+                (a) => a.effect?.getKeyframes()[0].transform !== undefined,
+              ).length,
+        ),
+      )
+      .toBe(0);
+  const drag = async (target: number) => {
+    const box = (await opening.boundingBox())!;
+    const point = (value: number) =>
+      box.x + 8 + ((box.width - 16) * value) / 100;
+    await page.mouse.move(
+      point(Number(await opening.inputValue())),
+      box.y + box.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(point(target), box.y + box.height / 2, { steps: 40 });
+    await page.mouse.up();
+  };
+  await drag(70);
+  await expect.poll(lean).toBeGreaterThan(3);
+  await page.screenshot({
+    path: testInfo.outputPath("sway-after-drag.png"),
+    fullPage: true,
+  });
+  await settle();
+  await opening.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(lean).toBeGreaterThan(3);
+  await settle();
+  await drag(20);
+  await expect.poll(lean).toBeLessThan(-3);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(panel).toHaveCSS("transform", "none");
+  await opening.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(panel).toHaveCSS("transform", "none");
+  await settle();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.getByRole("button", { name: "Smooth panel", exact: true }).click();
+  await opening.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(panel).toHaveCSS("transform", "none");
+  await settle();
+});
+
 test("adaptive light responds to outdoor lighting and scenes reset controls", async ({
   page,
 }) => {
@@ -86,7 +147,7 @@ test("widgets toggle, and tasks add, complete, and delete on the live display", 
   await page.getByRole("switch", { name: "Weather widget" }).click();
   await expect(page.locator(".weather-widget")).toHaveCount(0);
   await page.getByRole("switch", { name: "Room temperature widget" }).click();
-  await expect(page.locator(".curtain-widgets")).toContainText("21°");
+  await expect(page.locator(".curtain-widgets")).toContainText("70°F");
   await page.getByRole("switch", { name: "To-do list widget" }).click();
   await page
     .getByRole("textbox", { name: "New task" })
@@ -552,7 +613,7 @@ test("dark mode themes all phone tabs, keeps room settings, and persists", async
   });
   await page.getByRole("button", { name: "Widgets", exact: true }).click();
   await page.getByRole("switch", { name: "Room temperature widget" }).click();
-  await expect(page.locator(".curtain-widgets")).toContainText("21°");
+  await expect(page.locator(".curtain-widgets")).toContainText("70°F");
   await page.screenshot({
     path: testInfo.outputPath("dark-widgets.png"),
     fullPage: true,
@@ -675,6 +736,92 @@ test("rain works by day and night, stays behind the curtain, and updates sample 
   });
 });
 
+test("rain schedules occasional lightning by day and night and cancels it when disabled", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    Math.random = () => 0.25;
+  });
+  await page.clock.install();
+  await page.reload();
+  await expect(page.locator(".app-shell")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await slider(page, "opening", 75);
+  const rain = page.getByRole("button", { name: "Rain", exact: true });
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  const flash = page.locator(".lightning");
+  await rain.click();
+  await page.clock.runFor(6000);
+  await expect(flash).toHaveCount(0);
+  await page.clock.runFor(1100);
+  await expect(flash).toHaveCount(1);
+  expect(
+    await flash.evaluate((el) =>
+      Boolean(
+        el.compareDocumentPosition(document.querySelector(".fabric")!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ),
+  ).toBe(true);
+  await flash.evaluate((el) => {
+    for (const animation of el.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 180;
+    }
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("lightning-day.png"),
+    fullPage: true,
+  });
+  await page.clock.runFor(1000);
+  await expect(flash).toHaveCount(0);
+  await page.clock.runFor(20000);
+  await expect(flash).toHaveCount(0);
+  await page.clock.runFor(4900);
+  await expect(flash).toHaveCount(1);
+  await rain.click();
+  await expect(flash).toHaveCount(0);
+  await page.clock.runFor(60000);
+  await expect(flash).toHaveCount(0);
+  await page.getByRole("button", { name: "Evening", exact: true }).click();
+  await rain.click();
+  await page.clock.runFor(7100);
+  await expect(flash).toHaveCount(1);
+  await flash.evaluate((el) => {
+    for (const animation of el.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 180;
+    }
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("lightning-night.png"),
+    fullPage: true,
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(flash).toHaveCount(0);
+  await page.clock.runFor(60000);
+  await expect(flash).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(page.locator(".outdoor-atmosphere")).toHaveAttribute(
+    "data-motion",
+    "running",
+  );
+  await page.clock.runFor(7100);
+  await expect(flash).toHaveCount(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(flash).toHaveCount(0);
+  await page.clock.runFor(60000);
+  await expect(flash).toHaveCount(0);
+});
+
 test("clear scenes schedule visitors, alternate daylight visitors, and cancel incompatible events", async ({
   page,
 }, testInfo) => {
@@ -687,6 +834,7 @@ test("clear scenes schedule visitors, alternate daylight visitors, and cancel in
     "aria-busy",
     "false",
   );
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await page.clock.runFor(5000);
   await expect(page.locator(".visitor")).toHaveAttribute("data-event", "birds");
   await page.locator(".bird-flight").evaluate((el) => {

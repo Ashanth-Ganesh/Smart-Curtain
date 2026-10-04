@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Room } from "#lib/curtain.js";
+  import { colors, type Room } from "#lib/curtain.js";
   import Icon from "./Icon.svelte";
   import OutdoorAtmosphere from "./OutdoorAtmosphere.svelte";
   let {
@@ -24,12 +24,75 @@
   let panelWidth = $derived(500 * (1 - room.opening / 100));
   let panelHeight = $derived(700 * (1 - room.lift / 100));
   let transmission = $derived(1 - light / 100);
+  let foldScale = $derived(1 - room.opening / 100);
   let frameWidth = $state(1018);
   let frameHeight = $state(718);
+  let curtainSvg: SVGSVGElement;
+  let previousMotion:
+    { id: string; opening: number; material: string } | undefined;
+  let swayAngle = 0;
   // Keep widget text proportional even when the curtain's aspect ratio changes.
   let widgetScale = $derived(
     ((frameWidth - 18) / Math.max(1, frameHeight - 18)) * 0.7,
   );
+  $effect(() => {
+    const current = {
+      id: room.id,
+      opening: room.opening,
+      material: room.material,
+    };
+    const previous = previousMotion;
+    previousMotion = current;
+    if (
+      !curtainSvg ||
+      !previous ||
+      previous.id !== current.id ||
+      previous.material !== current.material ||
+      current.material !== "linen" ||
+      previous.opening === current.opening
+    ) {
+      swayAngle = 0;
+      return;
+    }
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (preference.matches) {
+      swayAngle = 0;
+      return;
+    }
+    const movement = current.opening - previous.opening;
+    const angle =
+      1.5 *
+      Math.sign(movement) *
+      Math.min(0.9, Math.max(0.65, Math.abs(movement) * 0.04));
+    const panels = Array.from(curtainSvg.querySelectorAll(".fabric-sway"));
+    const animations = panels.map((panel) => {
+      const side = panel.classList.contains("right-sway") ? -1 : 1;
+      return panel.animate(
+        [swayAngle, angle, -angle * 0.35, angle * 0.1, 0].map((value, i) => ({
+          transform: `skewX(${value * side}deg)`,
+          offset: [0, 0.22, 0.6, 0.82, 1][i],
+          easing: i === 0 ? "ease-out" : "ease-in-out",
+        })),
+        { duration: 2000 },
+      );
+    });
+    const stop = () => {
+      // Continue from the current lean when another slider input interrupts the sway.
+      swayAngle =
+        (Math.atan(
+          new DOMMatrixReadOnly(getComputedStyle(panels[0]).transform).c,
+        ) *
+          180) /
+        Math.PI;
+      animations.forEach((animation) => animation.cancel());
+      if (preference.matches) swayAngle = 0;
+    };
+    preference.addEventListener("change", stop);
+    return () => {
+      stop();
+      preference.removeEventListener("change", stop);
+    };
+  });
 </script>
 
 <div
@@ -47,6 +110,7 @@
     style:--widget-scale={widgetScale}
   >
     <svg
+      bind:this={curtainSvg}
       class="curtain-view"
       viewBox="0 0 1000 700"
       preserveAspectRatio="none"
@@ -84,12 +148,16 @@
           ><stop stop-color="#000" stop-opacity="0.02" /><stop
             offset="0.24"
             stop-color="#fff"
-            stop-opacity="0.16"
-          /><stop offset="0.57" stop-color="#000" stop-opacity="0.11" /><stop
-            offset="0.8"
-            stop-color="#fff"
-            stop-opacity="0.05"
+            stop-opacity={room.material === "linen"
+              ? 0.16 + room.opening * 0.0015
+              : 0.16}
           /><stop
+            offset="0.57"
+            stop-color="#000"
+            stop-opacity={room.material === "linen"
+              ? 0.11 + room.opening * 0.002
+              : 0.11}
+          /><stop offset="0.8" stop-color="#fff" stop-opacity="0.05" /><stop
             offset="1"
             stop-color="#000"
             stop-opacity="0.02"
@@ -121,11 +189,11 @@
         >
         <clipPath id="curtain-coverage"
           ><rect
-            class="moving-panel"
+            class="moving-panel fabric-sway"
             width={panelWidth}
             height={panelHeight}
           /><rect
-            class="moving-panel"
+            class="moving-panel fabric-sway right-sway"
             x={1000 - panelWidth}
             width={panelWidth}
             height={panelHeight}
@@ -232,11 +300,24 @@
               height="700"
               preserveAspectRatio="xMidYMid slice"
             />{/if}
-          {#if room.material === "linen"}<rect
-              width="1000"
-              height="700"
-              fill="url(#linen-folds)"
-            /><rect
+          {#if room.material === "linen"}<g class="fabric-sway"
+              ><rect
+                class="gathered-folds"
+                width="500"
+                height="700"
+                fill="url(#linen-folds)"
+                style:transform={`scaleX(${foldScale})`}
+              /></g
+            ><g class="fabric-sway right-sway"
+              ><rect
+                class="gathered-folds right-folds"
+                x="500"
+                width="500"
+                height="700"
+                fill="url(#linen-folds)"
+                style:transform={`scaleX(${foldScale})`}
+              /></g
+            ><rect
               width="1000"
               height="700"
               fill="url(#linen-grain)"
@@ -268,13 +349,28 @@
         <foreignObject width="1000" height="700">
           <div
             class="curtain-widgets"
-            class:light-text={room.color === "#6d7c7a" ||
+            class:light-text={colors.find((color) => color.value === room.color)
+              ?.dark ||
               (!daylight && light >= 60)}
           >
             <div class="left-widgets">
               {#if room.widgets.clock}<div class="clock-widget">
                   <div class="clock-time">{time}</div>
                   <div class="widget-date">{date}</div>
+                </div>{/if}
+              {#if room.widgets.music}<div class="display-card music-display">
+                  <Icon name="music" size={24} />
+                  <div>
+                    <div class="widget-eyebrow">
+                      {playing ? "NOW PLAYING" : "MUSIC"}
+                    </div>
+                    <div class="track-title">
+                      {track || "Choose your own soundtrack"}
+                    </div>
+                  </div>
+                  {#if playing}<div class="equalizer">
+                      <i></i><i></i><i></i>
+                    </div>{/if}
                 </div>{/if}
               {#if room.widgets.tasks}<div class="display-card">
                   <span class="widget-eyebrow">TASKS</span
@@ -296,16 +392,15 @@
                     name={rainy ? "rain" : daylight ? "sun" : "moon"}
                     size={38}
                   />
-                  <div class="weather-temp">{daylight ? "22°" : "17°"}</div>
+                  <div class="weather-temp">{daylight ? "72°F" : "63°F"}</div>
                   <div class="widget-date">
                     {rainy ? "Rainy" : daylight ? "Sunny" : "Clear"}
                   </div>
-                  <small>Sample weather</small>
                 </div>{/if}
               {#if room.widgets.temperature}<div class="display-card">
-                  <div class="widget-eyebrow">INSIDE · SAMPLE</div>
+                  <div class="widget-eyebrow">INSIDE</div>
                   <div class="small-reading">
-                    21°<span> A comfortable space</span>
+                    70°F<span> A comfortable space</span>
                   </div>
                 </div>{/if}
               {#if room.widgets.light}<div class="display-card">
@@ -317,20 +412,6 @@
                         : " Just how you like it"}</span
                     >
                   </div>
-                </div>{/if}
-              {#if room.widgets.music}<div class="display-card music-display">
-                  <Icon name="music" size={24} />
-                  <div>
-                    <div class="widget-eyebrow">
-                      {playing ? "NOW PLAYING" : "MUSIC"}
-                    </div>
-                    <div class="track-title">
-                      {track || "Choose your own soundtrack"}
-                    </div>
-                  </div>
-                  {#if playing}<div class="equalizer">
-                      <i></i><i></i><i></i>
-                    </div>{/if}
                 </div>{/if}
             </div>
           </div>
@@ -445,6 +526,19 @@
       x 850ms cubic-bezier(0.2, 0.7, 0.2, 1),
       height 850ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
+  .fabric-sway {
+    transform-origin: 0 0;
+  }
+  .gathered-folds {
+    transform-origin: 0 0;
+    transition: transform 850ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .right-folds {
+    transform-origin: 1000px 0;
+  }
+  #fold stop {
+    transition: stop-opacity 850ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
   .fabric,
   .section-fabric {
     transition: opacity 700ms;
@@ -497,12 +591,6 @@
     font-weight: 300;
     line-height: 1.15;
     margin-top: 9px;
-  }
-  .weather-widget small {
-    display: block;
-    opacity: 0.5;
-    font-size: 11px;
-    margin-top: 6px;
   }
   .display-card {
     padding-top: 20px;
@@ -662,6 +750,8 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .moving-panel,
+    .gathered-folds,
+    #fold stop,
     .fabric,
     .room-scene::after {
       transition: none;

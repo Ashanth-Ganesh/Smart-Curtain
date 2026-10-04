@@ -8,7 +8,7 @@
     scale,
   }: { daylight: boolean; rainy: boolean; scale: number } = $props();
   type Visitor = {
-    kind: "birds" | "butterfly" | "shooting-star";
+    kind: "birds" | "butterfly" | "shooting-star" | "lightning";
     reverse: boolean;
     y: number;
     x: number;
@@ -66,39 +66,50 @@
     const wet = rainy;
     const running = ready && visible && !reducedMotion;
     visitor = null;
-    if (!running || wet) return;
+    if (!running) return;
     let previous = "";
     let nextTimer: ReturnType<typeof setTimeout>;
     let endTimer: ReturnType<typeof setTimeout>;
     const schedule = (first = false) => {
-      const delay = first
-        ? between(3000, 5000)
-        : daytime
-          ? between(15000, 30000)
-          : between(45000, 90000);
+      const delay = wet
+        ? first
+          ? between(6000, 10000)
+          : between(20000, 40000)
+        : first
+          ? between(3000, 5000)
+          : daytime
+            ? between(15000, 30000)
+            : between(45000, 90000);
       nextTimer = setTimeout(() => {
-        const kind = daytime
-          ? previous === "birds"
-            ? "butterfly"
-            : previous === "butterfly"
-              ? "birds"
-              : Math.random() < 0.5
+        const kind = wet
+          ? "lightning"
+          : daytime
+            ? previous === "birds"
+              ? "butterfly"
+              : previous === "butterfly"
                 ? "birds"
-                : "butterfly"
-          : "shooting-star";
+                : Math.random() < 0.5
+                  ? "birds"
+                  : "butterfly"
+            : "shooting-star";
         previous = kind;
         const duration =
-          kind === "birds"
-            ? between(7, 10)
-            : kind === "butterfly"
-              ? between(12, 16)
-              : between(1.3, 1.9);
+          kind === "lightning"
+            ? 0.9
+            : kind === "birds"
+              ? between(7, 10)
+              : kind === "butterfly"
+                ? between(12, 16)
+                : between(1.3, 1.9);
         visitor = {
           kind,
           duration,
           reverse: Math.random() < 0.5,
-          x: between(160, 600),
-          y: between(65, kind === "butterfly" ? 290 : 190),
+          x: between(160, kind === "lightning" ? 840 : 600),
+          y:
+            kind === "lightning"
+              ? between(25, 65)
+              : between(65, kind === "butterfly" ? 290 : 190),
           size: between(0.85, 1.2),
         };
         endTimer = setTimeout(() => {
@@ -185,8 +196,12 @@
     <g
       class="visitor"
       data-event={visitor.kind}
-      transform={`translate(${visitor.kind === "shooting-star" ? visitor.x : 0} ${visitor.y}) scale(1 ${scale})`}
-      transition:fade={{ duration: reducedMotion ? 0 : 250 }}
+      transform={visitor.kind === "lightning"
+        ? undefined
+        : `translate(${visitor.kind === "shooting-star" ? visitor.x : 0} ${visitor.y}) scale(1 ${scale})`}
+      transition:fade={{
+        duration: reducedMotion || rainy ? 0 : 250,
+      }}
     >
       {#if visitor.kind === "birds"}
         <g
@@ -237,7 +252,7 @@
             />
           </g>
         </g>
-      {:else}
+      {:else if visitor.kind === "shooting-star"}
         <g
           class="shooting-star motion"
           style:--duration={`${visitor.duration}s`}
@@ -249,6 +264,28 @@
             stroke-linecap="round"
           />
           <circle r="3" fill="#fff9de" />
+        </g>
+      {:else}
+        <g class="lightning motion" style:--duration={`${visitor.duration}s`}>
+          <rect width="1000" height="380" fill="url(#lightning-sky)" />
+          <g
+            transform={`translate(${visitor.x} ${visitor.y}) scale(${visitor.reverse ? -1 : 1} ${scale})`}
+            fill="none"
+            stroke="#ecf5ff"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M0 0L-19 44H4L-23 91H-5L-36 145M-19 44L-43 63L-38 81"
+              stroke-width="18"
+              opacity="0.12"
+            />
+            <path
+              d="M0 0L-19 44H4L-23 91H-5L-36 145M-19 44L-43 63L-38 81"
+              stroke-width="3"
+              opacity="0.85"
+            />
+          </g>
         </g>
       {/if}
     </g>
@@ -284,6 +321,10 @@
     </g>
   {/if}
   <defs>
+    <linearGradient id="lightning-sky" x2="0" y2="1">
+      <stop stop-color="#e1eeff" stop-opacity="0.24" />
+      <stop offset="1" stop-color="#e1eeff" stop-opacity="0" />
+    </linearGradient>
     <linearGradient id="meteor-tail" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#dceaff" stop-opacity="0" />
       <stop offset="1" stop-color="#fff9de" />
@@ -369,6 +410,12 @@
     animation-name: rainfall;
     animation-timing-function: linear;
     animation-iteration-count: infinite;
+  }
+  .lightning {
+    opacity: 0;
+    animation-name: lightning;
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
   }
   .glass-drop {
     animation-name: slide;
@@ -465,6 +512,15 @@
       transform: translate(-100px, 820px);
     }
   }
+  @keyframes lightning {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+  }
   @keyframes slide {
     0% {
       transform: translateY(0);
@@ -482,6 +538,9 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
+    .lightning {
+      display: none;
+    }
     .motion {
       animation: none;
     }

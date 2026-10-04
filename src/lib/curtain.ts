@@ -41,7 +41,13 @@ export const colors = [
   { name: "Natural linen", value: "#dedace" },
   { name: "Soft sage", value: "#bdc9b6" },
   { name: "Warm clay", value: "#cfae9e" },
-  { name: "Slate", value: "#6d7c7a" },
+  { name: "Slate", value: "#6d7c7a", dark: true },
+  { name: "Warm ivory", value: "#eee5d3" },
+  { name: "Powder blue", value: "#b5cbd8" },
+  { name: "Dusty rose", value: "#d4a8b2" },
+  { name: "Honey", value: "#d4b477" },
+  { name: "Forest green", value: "#425e50", dark: true },
+  { name: "Midnight blue", value: "#354d69", dark: true },
 ];
 
 export const widgetOptions: {
