@@ -19,6 +19,33 @@ npm run preview
 
 The build generates a static site in `build/`. Serve that directory with any static web host; no backend or Node server is required.
 
+## Host on GitHub Pages
+
+1. Open [the repository's Pages settings](https://github.com/Ashanth-Ganesh/Smart-Curtain/settings/pages). Under **Build and deployment**, set **Source** to **GitHub Actions**. The workflow is already included; you do not need to select a template.
+2. Commit your source changes and push to `main`:
+
+   ```sh
+   git add .
+   git commit -m "Prepare smart curtain UI for GitHub Pages"
+   git push origin main
+   ```
+
+3. In the repository's **Actions** tab, wait for **Deploy UI to GitHub Pages** to succeed. Your UI will be at **https://ashanth-ganesh.github.io/Smart-Curtain/**.
+
+Every subsequent push to `main` rebuilds and deploys the UI. You can also run the workflow manually from the Actions tab. On GitHub Free, Pages requires a public repository. No custom secrets or database are needed.
+
+The workflow reads the URL base path from GitHub Pages and passes it to SvelteKit using `BASE_PATH`, so JavaScript, styles, and the favicon load under `/Smart-Curtain/`. Local development still runs at `/`. Only the generated `build/` artifact is published; you do not need to commit that folder. Saved settings remain local to each visitor's browser.
+
+To check the Pages build locally in PowerShell:
+
+```powershell
+$env:BASE_PATH = "/Smart-Curtain"
+npm run build
+npm run preview -- --open /Smart-Curtain/
+# After stopping the preview, restore the usual local configuration:
+Remove-Item Env:BASE_PATH
+```
+
 ## Try it
 
 - Switch between four rooms. Each has independent settings, widgets, tasks, and designs.
