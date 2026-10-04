@@ -1,6 +1,16 @@
 export type Widget =
   "clock" | "weather" | "temperature" | "light" | "tasks" | "music";
 export type Tool = "grid" | "circle" | "rectangle" | "freehand";
+export type CustomPreset = {
+  id: string;
+  name: string;
+  opening: number;
+  lift: number;
+  light: number;
+  auto: boolean;
+  daylight: boolean;
+  rainy: boolean;
+};
 export type Section = {
   id: string;
   name: string;

@@ -163,6 +163,65 @@
         fill={daylight ? "#b8c7ae" : "#617c7b"}
         opacity="0.6"
       />
+      <g class="outdoor-trees" aria-hidden="true">
+        <g class="outdoor-tree" transform="translate(180 585)">
+          <ellipse
+            cy="5"
+            rx="64"
+            ry="10"
+            fill={daylight ? "#536a50" : "#172f37"}
+            opacity="0.18"
+          />
+          <path
+            d="M-8 0L-4-150H6L10 0Z"
+            fill={daylight ? "#82745e" : "#3b4b4c"}
+          />
+          <path
+            d="M0-64L-34-112M2-94l30-34"
+            fill="none"
+            stroke={daylight ? "#82745e" : "#3b4b4c"}
+            stroke-width="6"
+            stroke-linecap="round"
+          />
+          <path
+            d="M-66-82C-95-108-80-149-48-154C-60-190-24-213 0-195C29-219 67-190 60-162C98-153 104-112 76-92C74-64 40-52 16-67C-7-42-48-53-51-75Z"
+            fill={daylight ? "#78946b" : "#2a4851"}
+          />
+          <path
+            d="M-48-154C-57-184-23-205 0-190C29-210 59-186 54-163C24-177 8-162-6-152C-24-165-35-162-48-154Z"
+            fill={daylight ? "#94ab82" : "#36555e"}
+          />
+          <path
+            d="M-62-81C-36-87-26-75-8-87C15-68 45-77 67-92C77-66 41-53 16-67C-7-42-48-53-51-75Z"
+            fill={daylight ? "#647f5c" : "#223e46"}
+          />
+        </g>
+        <g class="outdoor-tree" transform="translate(830 491) scale(0.76)">
+          <ellipse
+            cy="5"
+            rx="54"
+            ry="9"
+            fill={daylight ? "#536a50" : "#172f37"}
+            opacity="0.16"
+          />
+          <path d="M-6 0V-98H7V0Z" fill={daylight ? "#80755e" : "#3b4b4c"} />
+          <path
+            d="M0-216L47-136H27L65-83H39L79-35Q0-13-79-35L-39-83H-65L-27-136H-47Z"
+            fill={daylight ? "#628674" : "#294a53"}
+          />
+          <path
+            d="M0-216L47-136H27L65-83H39L79-35Q49-28 22-29L0-184Z"
+            fill={daylight ? "#527664" : "#213e47"}
+          />
+          <path
+            d="M-38-132Q0-120 38-132M-55-81Q0-64 55-81"
+            fill="none"
+            stroke={daylight ? "#88a48e" : "#41616a"}
+            stroke-width="3"
+            opacity="0.5"
+          />
+        </g>
+      </g>
       <OutdoorAtmosphere {daylight} {rainy} scale={widgetScale} />
       <g clip-path="url(#curtain-coverage)">
         <g mask="url(#custom-windows)" class="fabric" opacity={transmission}>

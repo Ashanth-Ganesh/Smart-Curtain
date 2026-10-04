@@ -209,7 +209,7 @@ test("local image uploads apply to the curtain and individual windows", async ({
 
 test("music plays a local audio file and pauses when hidden", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.getByRole("button", { name: "Widgets", exact: true }).click();
   await page.getByRole("switch", { name: "Music widget" }).click();
   // A short silent WAV exercises the real browser audio element without an external service.
@@ -233,12 +233,239 @@ test("music plays a local audio file and pauses when hidden", async ({
   });
   await page.getByRole("button", { name: "Play music" }).click();
   await expect(page.locator(".music-display")).toContainText("NOW PLAYING");
+  await slider(page, "music-volume", 25);
+  await expect
+    .poll(() =>
+      page.locator("audio").evaluate((el: HTMLAudioElement) => el.volume),
+    )
+    .toBe(0.25);
+  await slider(page, "music-volume", 0);
+  await expect
+    .poll(() =>
+      page.locator("audio").evaluate((el: HTMLAudioElement) => el.volume),
+    )
+    .toBe(0);
+  await slider(page, "music-volume", 65);
+  await page.screenshot({
+    path: testInfo.outputPath("music-volume.png"),
+    fullPage: true,
+  });
   await page.getByRole("switch", { name: "Music widget" }).click();
   await expect
     .poll(() =>
       page.locator("audio").evaluate((el: HTMLAudioElement) => el.paused),
     )
     .toBe(true);
+  await page.reload();
+  await expect(page.locator(".app-shell")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect
+    .poll(() =>
+      page.locator("audio").evaluate((el: HTMLAudioElement) => el.volume),
+    )
+    .toBe(0.65);
+  await page.getByRole("button", { name: "Widgets", exact: true }).click();
+  await page.getByRole("switch", { name: "Music widget" }).click();
+  await expect(page.locator("#music-volume")).toHaveValue("65");
+});
+
+test("custom presets save locally, restore controls and weather in another room, and can be deleted", async ({
+  page,
+}, testInfo) => {
+  await slider(page, "opening", 58);
+  await slider(page, "lift", 21);
+  await slider(page, "light", 45);
+  await page.getByRole("switch", { name: "Adaptive light" }).click();
+  await page.getByRole("button", { name: "Evening", exact: true }).click();
+  await page.getByRole("button", { name: "Rain", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Preset name" })
+    .fill("Rainy reading");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Apply preset: Rainy reading",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem("luma-presets-v1")!).length,
+      ),
+    )
+    .toBe(1);
+  await page
+    .getByRole("textbox", { name: "Preset name" })
+    .fill("rainy reading");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".toast")).toContainText("different name");
+  await expect(page.locator(".custom-preset")).toHaveCount(1);
+  await page.reload();
+  await page.getByLabel("Select room").selectOption("bedroom-1");
+  await page
+    .getByRole("button", { name: "Apply preset: Rainy reading", exact: true })
+    .click();
+  await expect(page.locator("#opening")).toHaveValue("58");
+  await expect(page.locator("#lift")).toHaveValue("21");
+  await expect(page.locator("#light")).toHaveValue("45");
+  await expect(
+    page.getByRole("switch", { name: "Adaptive light" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await expect(
+    page.getByRole("button", { name: "Evening", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Rain", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".outdoor-atmosphere")).toHaveAttribute(
+    "data-scene",
+    "rain",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("saved-preset.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Delete preset: Rainy reading", exact: true })
+    .click();
+  await expect(page.locator(".custom-preset")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".custom-preset")).toHaveCount(0);
+});
+
+test("undo restores window creation, an entire slider gesture, images and deletion with independent room history", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Design", exact: true }).click();
+  const undo = page.getByRole("button", { name: "Undo last window edit" });
+  await expect(undo).toBeDisabled();
+  const grid = page.getByRole("button", {
+    name: "Select grid section 1",
+    exact: true,
+  });
+  await grid.click();
+  await undo.click();
+  await expect(page.locator("#custom-windows path")).toHaveCount(0);
+  await expect(undo).toBeDisabled();
+  await grid.click();
+  await page.locator("#section-light").evaluate((el: HTMLInputElement) => {
+    for (const value of [80, 65, 40]) {
+      el.value = String(value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(page.locator("#section-light")).toHaveValue("40");
+  await undo.click();
+  await expect(page.locator("#section-light")).toHaveValue("100");
+  await slider(page, "section-light", 65);
+  await page.getByLabel("Upload window image", { exact: true }).setInputFiles({
+    name: "sample.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(page.locator("#section-light")).toHaveValue("0");
+  await undo.click();
+  await expect(page.locator("#section-light")).toHaveValue("65");
+  await expect(page.locator(".section-fabric image")).toHaveCount(0);
+  await page.getByRole("button", { name: "Delete selected window" }).click();
+  await expect(page.locator("#custom-windows path")).toHaveCount(0);
+  await page.getByLabel("Select room").selectOption("bedroom-1");
+  await expect(undo).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Select grid section 2", exact: true })
+    .click();
+  await page.getByLabel("Select room").selectOption("living");
+  await undo.click();
+  await expect(page.locator("#custom-windows path")).toHaveCount(1);
+  await expect(page.locator("#section-light")).toHaveValue("65");
+  await page.getByLabel("Select room").selectOption("bedroom-1");
+  await undo.click();
+  await expect(page.locator("#custom-windows path")).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("button", { name: "Design", exact: true }).click();
+  await expect(undo).toBeDisabled();
+  await expect(page.locator("#custom-windows path")).toHaveCount(1);
+});
+
+test("fullscreen fills the viewport, keeps scene controls, and exits through its button or browser exit", async ({
+  page,
+}, testInfo) => {
+  await slider(page, "opening", 75);
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await page
+    .getByRole("button", { name: "Fullscreen preview", exact: true })
+    .click();
+  await expect(page.locator(".preview-column")).toHaveClass(/expanded/);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document.fullscreenElement?.classList.contains("preview-column"),
+      ),
+    )
+    .toBe(true);
+  const preview = (await page.locator(".preview-column").boundingBox())!;
+  expect(preview.x).toBe(0);
+  expect(preview.y).toBe(0);
+  expect(preview.width).toBe(await page.evaluate(() => innerWidth));
+  await expect(page.locator(".phone-column")).toHaveAttribute("inert", "");
+  await page.getByRole("button", { name: "Rain", exact: true }).click();
+  await expect(page.locator(".outdoor-atmosphere")).toHaveAttribute(
+    "data-scene",
+    "rain",
+  );
+  await expect(page.locator("#sky stop").first()).toHaveCSS(
+    "stop-color",
+    "rgb(129, 156, 169)",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("fullscreen.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Exit fullscreen preview", exact: true })
+    .click();
+  await expect(page.locator(".preview-column")).not.toHaveClass(/expanded/);
+  await expect(page.locator(".phone-column")).not.toHaveAttribute("inert", "");
+  await expect(page.locator("#opening")).toHaveValue("75");
+  await page
+    .getByRole("button", { name: "Fullscreen preview", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
+    .toBe(true);
+  await page.evaluate(() => document.exitFullscreen());
+  await expect(page.locator(".preview-column")).not.toHaveClass(/expanded/);
+});
+
+test("fullscreen falls back to filling the mobile browser and Escape restores the page", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.locator(".preview-column").evaluate((el) => {
+    el.requestFullscreen = () =>
+      Promise.reject(new Error("Fullscreen is unavailable"));
+  });
+  await page
+    .getByRole("button", { name: "Fullscreen preview", exact: true })
+    .click();
+  await expect(page.locator(".preview-column")).toHaveClass(/expanded/);
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  const preview = (await page.locator(".preview-column").boundingBox())!;
+  expect(preview.height).toBe(900);
+  const scene = (await page.locator(".room-scene").boundingBox())!;
+  expect(scene.y + scene.height).toBeLessThanOrEqual(900);
+  expect(scene.height).toBeGreaterThan(600);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".preview-column")).not.toHaveClass(/expanded/);
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+  await expect(page.getByLabel("Select room")).toBeEnabled();
 });
 
 test("desktop and mobile layouts have no horizontal overflow", async ({

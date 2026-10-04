@@ -6,6 +6,8 @@
     transmission,
     widgetOptions,
     type Room,
+    type Section,
+    type CustomPreset,
   } from "#lib/curtain.js";
   import Icon from "#lib/components/Icon.svelte";
   import CurtainPreview from "#lib/components/CurtainPreview.svelte";
@@ -17,6 +19,16 @@
   let tab = $state<"controls" | "widgets" | "design">("controls");
   let daylight = $state(true);
   let rainy = $state(false);
+  let customPresets = $state<CustomPreset[]>([]);
+  let presetName = $state("");
+  let volume = $state(75);
+  let windowUndo = $state<
+    Record<string, { sections: Section[]; selected: string } | null>
+  >({});
+  let editingWindow = false;
+  let expanded = $state(false);
+  let nativeFullscreen = false;
+  let previewElement: HTMLElement;
   let theme = $state<"light" | "dark">("light");
   let selected = $state("");
   let section = $derived(room.sections.find((s) => s.id === selected));
@@ -55,6 +67,76 @@
     selected = "";
     activeScene = "";
     taskText = "";
+    editingWindow = false;
+  }
+  function savePreset(event: SubmitEvent) {
+    event.preventDefault();
+    const name = presetName.trim();
+    if (!name || customPresets.length >= 12) return;
+    if (
+      customPresets.some((p) => p.name.toLowerCase() === name.toLowerCase())
+    ) {
+      notify("Choose a different name for this preset.");
+      return;
+    }
+    customPresets.push({
+      id: crypto.randomUUID(),
+      name,
+      opening: room.opening,
+      lift: room.lift,
+      light: room.light,
+      auto: room.auto,
+      daylight,
+      rainy,
+    });
+    presetName = "";
+    notify(`Saved ${name}.`);
+  }
+  function applyPreset(saved: CustomPreset) {
+    room.opening = saved.opening;
+    room.lift = saved.lift;
+    room.light = saved.light;
+    room.auto = saved.auto;
+    daylight = saved.daylight;
+    rainy = saved.rainy;
+    activeScene = saved.id;
+  }
+  function rememberWindows(destination = room) {
+    windowUndo[destination.id] = {
+      sections: JSON.parse(JSON.stringify(destination.sections)),
+      selected: destination.id === room.id ? selected : "",
+    };
+    editingWindow = false;
+  }
+  function undoWindowEdit() {
+    const previous = windowUndo[room.id];
+    if (!previous) return;
+    room.sections = previous.sections;
+    selected = previous.selected;
+    windowUndo[room.id] = null;
+    editingWindow = false;
+  }
+  function editWindowLight(event: Event) {
+    if (!section) return;
+    if (!editingWindow) {
+      rememberWindows();
+      editingWindow = true;
+    }
+    section.light = (event.currentTarget as HTMLInputElement).valueAsNumber;
+  }
+  async function togglePreview() {
+    if (expanded) {
+      if (document.fullscreenElement === previewElement)
+        await document.exitFullscreen();
+      expanded = false;
+    } else {
+      expanded = true;
+      try {
+        await previewElement.requestFullscreen();
+      } catch {
+        // Filling the browser viewport also works when native fullscreen is unavailable.
+      }
+    }
   }
   function preset(name: string) {
     activeScene = name;
@@ -102,6 +184,7 @@
     if (!file) return;
     // Capture the destination before reading so changing rooms cannot redirect an upload.
     const destination = target === "section" ? section : room;
+    const destinationRoom = room;
     input.value = "";
     if (!destination) return;
     if (
@@ -126,6 +209,13 @@
       const check = new Image();
       check.src = data;
       await check.decode();
+      if (target === "section") {
+        if (!destinationRoom.sections.includes(destination as Section)) {
+          notify("That window was removed before the image finished loading.");
+          return;
+        }
+        rememberWindows(destinationRoom);
+      }
       destination.image = data;
       if (target === "section") destination.light = 0;
       notify("Your image is on the curtain.");
@@ -163,6 +253,8 @@
     }
   }
   function resetRoom() {
+    windowUndo[room.id] = null;
+    editingWindow = false;
     rooms = rooms.map((r) =>
       r.id === room.id
         ? createRooms().find((defaultRoom) => defaultRoom.id === r.id)!
@@ -173,6 +265,16 @@
     notify("This room is back to a fresh start.");
   }
   onMount(() => {
+    const syncFullscreen = () => {
+      if (document.fullscreenElement === previewElement) {
+        nativeFullscreen = true;
+        expanded = true;
+      } else if (nativeFullscreen) {
+        nativeFullscreen = false;
+        expanded = false;
+      }
+    };
+    document.addEventListener("fullscreenchange", syncFullscreen);
     const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
       .matches
       ? "dark"
@@ -233,6 +335,39 @@
     } catch {
       // Start with the defaults when saved settings cannot be read.
     }
+    try {
+      const saved = JSON.parse(localStorage.getItem("luma-presets-v1") || "[]");
+      if (Array.isArray(saved))
+        customPresets = saved
+          .filter(
+            (p: CustomPreset) =>
+              p &&
+              typeof p.id === "string" &&
+              typeof p.name === "string" &&
+              p.name.trim() &&
+              p.name.length <= 32 &&
+              [p.opening, p.lift, p.light].every(
+                (n) =>
+                  typeof n === "number" &&
+                  Number.isFinite(n) &&
+                  n >= 0 &&
+                  n <= 100,
+              ) &&
+              [p.auto, p.daylight, p.rainy].every(
+                (b) => typeof b === "boolean",
+              ),
+          )
+          .slice(0, 12);
+      const savedVolume = Number(localStorage.getItem("luma-volume") ?? 75);
+      if (
+        Number.isFinite(savedVolume) &&
+        savedVolume >= 0 &&
+        savedVolume <= 100
+      )
+        volume = savedVolume;
+    } catch {
+      // Keep the defaults when optional saved preferences cannot be read.
+    }
     loaded = true;
     const updateClock = () => {
       const now = new Date();
@@ -252,14 +387,19 @@
     return () => {
       clearInterval(interval);
       clearTimeout(toastTimer);
+      document.removeEventListener("fullscreenchange", syncFullscreen);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   });
   $effect(() => {
     if (!loaded) return;
     const serialized = JSON.stringify({ version: 1, rooms });
+    const savedPresets = JSON.stringify(customPresets);
+    const savedVolume = String(volume);
     try {
       localStorage.setItem(storageKey, serialized);
+      localStorage.setItem("luma-presets-v1", savedPresets);
+      localStorage.setItem("luma-volume", savedVolume);
     } catch {
       if (!storageWarningShown) {
         storageWarningShown = true;
@@ -279,7 +419,24 @@
   $effect(() => {
     if (loaded && !room.widgets.music && playing) audio?.pause();
   });
+  $effect(() => {
+    if (audio) audio.volume = volume / 100;
+  });
+  $effect(() => {
+    if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  });
 </script>
+
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === "Escape" && expanded) void togglePreview();
+  }}
+/>
 
 <svelte:head>
   <title>Luma — a little light, your way</title>
@@ -293,7 +450,11 @@
 <div class="app-shell" aria-busy={!loaded}>
   <main>
     <div class="workspace">
-      <aside class="phone-column" aria-label="Smartphone curtain controls">
+      <aside
+        class="phone-column"
+        aria-label="Smartphone curtain controls"
+        inert={expanded}
+      >
         <div class="phone">
           <div class="phone-status">
             <span>{time}</span>
@@ -435,6 +596,53 @@
                   ><span class="material-sample smooth"></span>Smooth panel</button
                 >
               </div>
+              <div class="section-heading">
+                <span>YOUR PRESETS</span><span class="section-count"
+                  >{customPresets.length}/12</span
+                >
+              </div>
+              <form class="preset-form" onsubmit={savePreset}>
+                <input
+                  aria-label="Preset name"
+                  placeholder="Name this setting"
+                  maxlength="32"
+                  bind:value={presetName}
+                />
+                <button
+                  type="submit"
+                  disabled={!presetName.trim() || customPresets.length >= 12}
+                  ><Icon name="plus" size={14} />Save</button
+                >
+              </form>
+              <p class="small-note">
+                Saves position, brightness &amp; outdoor scene.
+              </p>
+              {#if customPresets.length}<div class="custom-preset-list">
+                  {#each customPresets as saved (saved.id)}<div
+                      class="custom-preset"
+                      class:active={activeScene === saved.id}
+                    >
+                      <button
+                        class="apply-preset"
+                        aria-label={`Apply preset: ${saved.name}`}
+                        aria-pressed={activeScene === saved.id}
+                        onclick={() => applyPreset(saved)}
+                      >
+                        <Icon name="bookmark" size={14} /><span
+                          >{saved.name}</span
+                        >
+                      </button>
+                      <button
+                        aria-label={`Delete preset: ${saved.name}`}
+                        onclick={() => {
+                          customPresets = customPresets.filter(
+                            (p) => p.id !== saved.id,
+                          );
+                          if (activeScene === saved.id) activeScene = "";
+                        }}><Icon name="close" size={13} /></button
+                      >
+                    </div>{/each}
+                </div>{/if}
             {:else if tab === "widgets"}
               <div class="phone-section-title">
                 <h2>Widgets</h2>
@@ -506,12 +714,37 @@
                     ><Icon name="upload" size={16} /></button
                   >
                 </div>
+                <div class="control-block volume-control">
+                  <label for="music-volume"
+                    ><span><Icon name="volume" size={15} />Music volume</span
+                    ><output>{volume}%</output></label
+                  >
+                  <input
+                    id="music-volume"
+                    type="range"
+                    min="0"
+                    max="100"
+                    bind:value={volume}
+                    style:--range={volume + "%"}
+                  />
+                  <div class="range-labels">
+                    <span>Muted</span><span>Full volume</span>
+                  </div>
+                </div>
                 <p class="small-note">
                   Plays locally. Choose again after refreshing.
                 </p>{/if}
             {:else}
-              <div class="phone-section-title">
+              <div class="phone-section-title design-title">
                 <h2>Curtain design</h2>
+                <button
+                  class="undo-button"
+                  aria-label="Undo last window edit"
+                  title="Undo last window edit"
+                  disabled={!windowUndo[room.id]}
+                  onclick={undoWindowEdit}
+                  ><Icon name="undo" size={14} />Undo</button
+                >
               </div>
               <div class="section-heading first">
                 <span>CURTAIN COLOR</span>
@@ -549,7 +782,11 @@
                   >{room.sections.length}/32</span
                 >
               </div>
-              <SectionEditor {room} bind:selected />
+              <SectionEditor
+                {room}
+                bind:selected
+                onedit={() => rememberWindows()}
+              />
               {#if room.sections.length}<label
                   class="field-label"
                   for="section-select">Edit a window</label
@@ -557,6 +794,7 @@
                   id="section-select"
                   class="section-select"
                   bind:value={selected}
+                  onchange={() => (editingWindow = false)}
                   ><option value="">Choose a section</option
                   >{#each room.sections as item}<option value={item.id}
                       >{item.name}</option
@@ -572,7 +810,10 @@
                     type="range"
                     min="0"
                     max="100"
-                    bind:value={section.light}
+                    value={section.light}
+                    oninput={editWindowLight}
+                    onchange={() => (editingWindow = false)}
+                    onblur={() => (editingWindow = false)}
                     style:--range={section.light + "%"}
                   />
                   <div class="range-labels">
@@ -589,6 +830,7 @@
                   ><button
                     aria-label="Delete selected window"
                     onclick={() => {
+                      rememberWindows();
                       room.sections = room.sections.filter(
                         (s) => s.id !== selected,
                       );
@@ -599,7 +841,10 @@
                 {#if section.image}<button
                     class="text-button"
                     onclick={() => {
-                      if (section) section.image = "";
+                      if (section) {
+                        rememberWindows();
+                        section.image = "";
+                      }
                     }}>Remove window image</button
                   >{/if}{/if}
               <p class="small-note">
@@ -610,7 +855,12 @@
           <div class="home-indicator"></div>
         </div>
       </aside>
-      <section class="preview-column" aria-label="Live curtain preview">
+      <section
+        class="preview-column"
+        class:expanded
+        bind:this={previewElement}
+        aria-label="Live curtain preview"
+      >
         <div class="preview-header">
           <div class="preset-buttons" aria-label="Curtain presets">
             {#each [{ name: "Morning", icon: "sun" }, { name: "Focus", icon: "light" }, { name: "Unwind", icon: "moon" }] as presetOption}
@@ -649,8 +899,10 @@
             class="rain-toggle"
             class:active={rainy}
             aria-pressed={rainy}
-            onclick={() => (rainy = !rainy)}
-            ><Icon name="rain" size={16} />Rain</button
+            onclick={() => {
+              rainy = !rainy;
+              activeScene = "";
+            }}><Icon name="rain" size={16} />Rain</button
           >
           <button
             class="theme-toggle"
@@ -662,6 +914,16 @@
             aria-pressed={theme === "dark"}
             onclick={() => (theme = theme === "dark" ? "light" : "dark")}
             ><Icon name={theme === "dark" ? "sun" : "moon"} size={17} /></button
+          >
+          <button
+            class="preview-expand theme-toggle"
+            aria-label={expanded
+              ? "Exit fullscreen preview"
+              : "Fullscreen preview"}
+            title={expanded ? "Exit fullscreen preview" : "Fullscreen preview"}
+            aria-pressed={expanded}
+            onclick={togglePreview}
+            ><Icon name={expanded ? "collapse" : "expand"} size={17} /></button
           >
         </div>
         <CurtainPreview

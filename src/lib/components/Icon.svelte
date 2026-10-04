@@ -26,6 +26,11 @@
     pause: "M8 5v14 M16 5v14",
     leaf: "M20 3C9 2 3 7 5 15c5 8 15 3 15-12Z M4 21L16 8",
     reset: "M4 10a8 8 0 1 1 1 8 M4 4v6h6",
+    undo: "M4 9h9a6 6 0 0 1 0 12 M4 9l5-5 M4 9l5 5",
+    plus: "M12 5v14 M5 12h14",
+    bookmark: "M6 3h12v18l-6-4-6 4Z",
+    expand: "M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5",
+    collapse: "M3 8h5V3 M16 3v5h5 M21 16h-5v5 M8 21v-5H3",
     close: "M6 6l12 12 M18 6L6 18",
     volume: "M3 9h4l5-4v14l-5-4H3Z M16 8a6 6 0 0 1 0 8 M19 5a10 10 0 0 1 0 14",
   };

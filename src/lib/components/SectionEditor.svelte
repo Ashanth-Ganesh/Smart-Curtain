@@ -1,8 +1,11 @@
 <script lang="ts">
   import { gridPath, type Room, type Tool } from "#lib/curtain.js";
   import Icon from "./Icon.svelte";
-  let { room, selected = $bindable("") }: { room: Room; selected?: string } =
-    $props();
+  let {
+    room,
+    selected = $bindable(""),
+    onedit,
+  }: { room: Room; selected?: string; onedit: () => void } = $props();
   let tool = $state<Tool>("grid");
   let drawing = $state(false);
   let start = { x: 0, y: 0 };
@@ -65,6 +68,7 @@
     const height =
       Math.max(...points.map((p) => p.y)) - Math.min(...points.map((p) => p.y));
     if (draft && width > 15 && height > 15 && room.sections.length < 32) {
+      onedit();
       selected = crypto.randomUUID();
       room.sections.push({
         id: selected,
@@ -83,7 +87,8 @@
   }
   function grid(index: number) {
     const id = `grid-${index}`;
-    if (!room.sections.some((s) => s.id === id) && room.sections.length < 32)
+    if (!room.sections.some((s) => s.id === id) && room.sections.length < 32) {
+      onedit();
       room.sections.push({
         id,
         name: `Grid ${index + 1}`,
@@ -95,6 +100,7 @@
         light: 100,
         image: "",
       });
+    }
     selected = id;
   }
 </script>
