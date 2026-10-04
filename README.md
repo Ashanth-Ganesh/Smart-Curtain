@@ -1,56 +1,61 @@
-# sv
+﻿# Luma · Smart curtain
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A UI-only smart curtain prototype built with Svelte 5 and TypeScript. The phone controls a live, animated curtain preview, based on [the feature notes](docs/smart-curtain.md) and [the sketch](docs/smart-curtain-sketch.jpg).
 
-## Creating a project
+## Run locally
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
+Use Node.js 22.12+ (or a newer supported version).
 
 ```sh
-# recreate this project
-npx sv@1.0.1 create --template minimal --types ts --install npm .
-```
-
-## Adding features
-
-Add features to your project with `sv add`:
-
-```sh
-npx sv add
-```
-
-For example, to add Tailwind CSS:
-
-```sh
-npx sv add tailwindcss
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
+npm install
 npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
-
 ```sh
+npm run check
 npm run build
+npm run preview
 ```
 
-You can preview the production build with `npm run preview`.
+The build generates a static site in `build/`. Serve that directory with any static web host; no backend or Node server is required.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+## Try it
+
+- Switch between four rooms. Each has independent settings, widgets, tasks, and designs.
+- Open the curtain horizontally, raise it vertically, and adjust light transmission. Daylight and Evening change the outdoor scene.
+- Toggle Rain for daytime or nighttime showers. Clear daylight brings occasional birds and butterflies; clear evenings have twinkling stars, fireflies, and rare shooting stars. All outdoor animation is behind the curtain and follows its transparency.
+- Turn on Adaptive light, set a preferred brightness, and switch the outdoor lighting to see the simulated sensor respond. This approximation adjusts transmission; it cannot guarantee a target when the curtain is open or outside is too dark.
+- Toggle time, sample weather, sample indoor temperature, light level, tasks, and music widgets. Add, complete, and delete tasks. Music plays a local audio file with pause/resume.
+- Use Design to change the curtain color, select linen or a smooth panel, or upload an image.
+- Choose tiles in the 4×4 grid, or drag to draw circles, rectangles, and freehand windows. Select a window to change its transparency, add an image, or delete it. Up to 32 sections per room. Keyboard users can use the grid and section selector.
+- Try Morning, Focus, and Unwind scenes, or reset the current room.
+- Use the theme button beside Daylight / Evening for a navy dark mode with a night-sky blue accent. The theme follows your system preference initially and remembers your selection independently of the outdoor lighting.
+
+The desktop layout fits the browser height, with extra phone content scrolling inside the phone. On narrow screens, the preview and phone stack vertically.
+
+Room settings save in the browser's local storage. Uploaded images stay on the device, are limited to 3 MB each, and count toward the browser's storage limit. If storage fills up or is unavailable, a brief notice explains that changes last for the current visit. Audio files must be reselected after refresh. Weather and temperature are clearly labeled sample data; time and date use the device's clock. The outdoor landscape and animation are local SVGs. Daylight, Evening, and Rain are preview controls for the current visit.
+
+Clear scenes show their first visitor after 3–5 seconds. Birds and butterflies alternate with random 15–30 second gaps, while shooting stars have 45–90 second gaps. Rain replaces visitors and stars with falling streaks and slow glass droplets. Scene changes fade incompatible effects; background motion pauses in hidden tabs, and reduced-motion preferences disable movement and scheduled visitors while retaining the static scene. Rain also changes the simulated weather widget and adaptive-light calculation.
+
+Video/security feeds, live weather and sensor integrations, hardware control, and an AI assistant are omitted because this is a frontend prototype. The material selector changes the rendering; it is not a fabric physics simulation. Google Fonts is optional, with system sans-serif fallbacks when offline.
+
+## Browser checks
+
+```sh
+npx playwright install chromium
+npm test
+```
+
+The tests cover real curtain movement and transparency, room isolation and persistence, adaptive lighting, widgets and tasks, grid and drawn windows, local image/audio uploads, desktop viewport fitting, mobile overflow, saved/system theme preferences, outdoor scene changes, visitor scheduling, visibility pauses, and reduced motion. Screenshots are written to the ignored `test-results/` directory.
+
+## Code map
+
+- `src/routes/+page.svelte`: app state, phone controls, uploads, and local saving.
+- `src/routes/app.css`: page and phone styling, including responsive layouts.
+- `src/lib/curtain.ts`: small types, room defaults, and sensor approximation.
+- `src/lib/components/CurtainPreview.svelte`: SVG landscape, movement, cutouts, and widgets.
+- `src/lib/components/OutdoorAtmosphere.svelte`: outdoor effects and the occasional-visitor scheduler.
+- `src/lib/components/SectionEditor.svelte`: grid selection and pointer drawing.
+- `src/lib/components/Icon.svelte`: shared SVG icons, with no component library required.
+
+SvelteKit handles the development and static build tooling. There are no API routes or backend services.
